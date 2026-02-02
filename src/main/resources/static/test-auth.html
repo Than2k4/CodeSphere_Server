@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Authentication - CodeSphere</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        .google-btn {
+            background: #db4437;
+            margin-top: 10px;
+        }
+        .google-btn:hover {
+            background: #c23321;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            border-left: 4px solid #4caf50;
+            word-break: break-all;
+            font-size: 12px;
+            display: none;
+        }
+        .result.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .result.show {
+            display: block;
+        }
+        .token-display {
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff3cd;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 11px;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Test Authentication</h1>
+
+        <!-- Section 1: Register -->
+        <div class="section">
+            <h2>1. Đăng Ký</h2>
+            <input type="email" id="registerEmail" placeholder="Email" value="test@example.com">
+            <input type="password" id="registerPassword" placeholder="Password" value="password123">
+            <input type="text" id="registerUsername" placeholder="Username (optional)" value="testuser">
+            <button onclick="register()">Đăng Ký</button>
+            <div id="registerResult" class="result"></div>
+        </div>
+
+        <!-- Section 2: Login -->
+        <div class="section">
+            <h2>2. Đăng Nhập</h2>
+            <input type="email" id="loginEmail" placeholder="Email" value="test@example.com">
+            <input type="password" id="loginPassword" placeholder="Password" value="password123">
+            <button onclick="login()">Đăng Nhập</button>
+            <div id="loginResult" class="result"></div>
+        </div>
+
+        <!-- Section 3: Google OAuth2 -->
+        <div class="section">
+            <h2>3. Đăng Nhập Google</h2>
+            <button class="google-btn" onclick="googleLogin()">🔵 Đăng Nhập với Google</button>
+            <div id="googleResult" class="result"></div>
+        </div>
+
+        <!-- Section 4: Test Token -->
+        <div class="section">
+            <h2>4. Test Token (Protected Endpoint)</h2>
+            <input type="text" id="tokenInput" placeholder="Paste JWT Token here">
+            <button onclick="testToken()">Test Token</button>
+            <div id="tokenResult" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+
+        async function register() {
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+            const username = document.getElementById('registerUsername').value;
+            const resultDiv = document.getElementById('registerResult');
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password, username })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.className = 'result show';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Đăng ký thành công!</strong><br>
+                        <div class="token-display">Token: ${data.data.token}</div>
+                        <div class="token-display">User ID: ${data.data.userId}</div>
+                        <div class="token-display">Email: ${data.data.email}</div>
+                        <div class="token-display">Role: ${data.data.role}</div>
+                    `;
+                    // Auto fill token input
+                    document.getElementById('tokenInput').value = data.data.token;
+                } else {
+                    resultDiv.className = 'result error show';
+                    resultDiv.innerHTML = `<strong>❌ Lỗi:</strong> ${data.message || 'Đăng ký thất bại'}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = `<strong>❌ Lỗi:</strong> ${error.message}`;
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const resultDiv = document.getElementById('loginResult');
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.className = 'result show';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Đăng nhập thành công!</strong><br>
+                        <div class="token-display">Token: ${data.data.token}</div>
+                        <div class="token-display">User ID: ${data.data.userId}</div>
+                        <div class="token-display">Email: ${data.data.email}</div>
+                        <div class="token-display">Role: ${data.data.role}</div>
+                    `;
+                    // Auto fill token input
+                    document.getElementById('tokenInput').value = data.data.token;
+                } else {
+                    resultDiv.className = 'result error show';
+                    resultDiv.innerHTML = `<strong>❌ Lỗi:</strong> ${data.message || 'Đăng nhập thất bại'}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = `<strong>❌ Lỗi:</strong> ${error.message}`;
+            }
+        }
+
+        function googleLogin() {
+            // Redirect to Spring Security OAuth2 endpoint
+            window.location.href = 'http://localhost:8080/oauth2/authorization/google';
+        }
+
+        async function testToken() {
+            const token = document.getElementById('tokenInput').value;
+            const resultDiv = document.getElementById('tokenResult');
+
+            if (!token) {
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = '<strong>❌ Vui lòng nhập token!</strong>';
+                return;
+            }
+
+            try {
+                // Test với một endpoint protected (ví dụ: nếu có endpoint /api/v1/user/me)
+                // Hoặc có thể tạo endpoint test đơn giản
+                const response = await fetch(`${API_BASE}/auth/test-token`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.className = 'result show';
+                    resultDiv.innerHTML = `<strong>✅ Token hợp lệ!</strong><br>${JSON.stringify(data, null, 2)}`;
+                } else {
+                    resultDiv.className = 'result error show';
+                    resultDiv.innerHTML = `<strong>❌ Token không hợp lệ:</strong> ${data.message || 'Unauthorized'}`;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = `<strong>❌ Lỗi:</strong> ${error.message}`;
+            }
+        }
+
+        // Check if redirected from OAuth2 with token
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        if (token) {
+            document.getElementById('tokenInput').value = token;
+            document.getElementById('googleResult').className = 'result show';
+            document.getElementById('googleResult').innerHTML = `
+                <strong>✅ Đăng nhập Google thành công!</strong><br>
+                <div class="token-display">Token: ${token}</div>
+            `;
+        }
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth2 Redirect - CodeSphere</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .token-display {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            border-left: 4px solid #4caf50;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        button {
+            margin-top: 20px;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 OAuth2 Redirect Handler</h1>
+        <div id="message"></div>
+        <button onclick="goToTestPage()">Quay lại trang test</button>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const error = urlParams.get('error');
+
+        const messageDiv = document.getElementById('message');
+
+        if (token) {
+            messageDiv.innerHTML = `
+                <div class="token-display">
+                    <strong>✅ Đăng nhập Google thành công!</strong><br><br>
+                    <strong>JWT Token:</strong><br>
+                    ${token}
+                </div>
+            `;
+            // Lưu token vào localStorage
+            localStorage.setItem('jwt_token', token);
+        } else if (error) {
+            messageDiv.innerHTML = `
+                <div class="token-display error">
+                    <strong>❌ Lỗi:</strong> ${error}
+                </div>
+            `;
+        } else {
+            messageDiv.innerHTML = `
+                <div class="token-display error">
+                    <strong>❌ Không nhận được token</strong>
+                </div>
+            `;
+        }
+
+        function goToTestPage() {
+            window.location.href = 'http://localhost:8080/test-auth.html';
+        }
+    </script>
+</body>
+</html>
+
