@@ -2,6 +2,7 @@ package com.hcmute.codesphere_server.service.common;
 
 import com.hcmute.codesphere_server.model.entity.*;
 import com.hcmute.codesphere_server.model.payload.request.CreateSubmissionRequest;
+import com.hcmute.codesphere_server.model.payload.response.ProblemSolutionResponse;
 import com.hcmute.codesphere_server.model.payload.response.SubmissionDetailResponse;
 import com.hcmute.codesphere_server.model.payload.response.SubmissionResponse;
 import com.hcmute.codesphere_server.repository.common.*;
@@ -18,6 +19,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionSynchronization;
 
 import com.hcmute.codesphere_server.model.enums.ContestType;
+import java.util.Comparator;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +38,7 @@ public class SubmissionService {
     private final ContestSubmissionRepository contestSubmissionRepository;
     private final ContestRepository contestRepository;
     private final ContestRegistrationRepository contestRegistrationRepository;
+    private final UserProblemBestRepository userProblemBestRepository;
 
     @Transactional
     public SubmissionDetailResponse createSubmission(CreateSubmissionRequest request, Long userId, Long contestId) {
@@ -172,10 +175,11 @@ public class SubmissionService {
     public Page<SubmissionResponse> getSubmissions(
             Long userId,
             Long problemId,
+            String search,
             String status,
             Pageable pageable) {
         
-        Specification<SubmissionEntity> spec = buildSpecification(userId, problemId, status);
+        Specification<SubmissionEntity> spec = buildSpecification(userId, problemId, search, status);
         Page<SubmissionEntity> submissions = submissionRepository.findAll(spec, pageable);
         
         return submissions.map(this::mapToSubmissionResponse);
@@ -195,9 +199,68 @@ public class SubmissionService {
         return mapToSubmissionDetailResponse(submission);
     }
 
+    @Transactional(readOnly = true)
+    public List<ProblemSolutionResponse> getProblemSolutions(Long problemId, Long currentUserId, String search, String languageCode, int offset, int limit) {
+        problemRepository.findByIdAndStatusTrue(problemId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bài tập"));
+
+        UserProblemBestEntity myBest = userProblemBestRepository
+                .findByUserIdAndProblemId(currentUserId, problemId)
+                .orElseThrow(() -> new RuntimeException("Bạn cần giải đúng bài này trước khi xem Solutions"));
+
+        if (myBest.getBestSubmission() == null || !Boolean.TRUE.equals(myBest.getBestSubmission().getIsAccepted())) {
+            throw new RuntimeException("Bạn cần giải đúng bài này trước khi xem Solutions");
+        }
+
+        String keyword = search == null ? "" : search.trim().toLowerCase();
+        String langFilter = languageCode == null ? "" : languageCode.trim().toLowerCase();
+
+        List<UserProblemBestEntity> acceptedBest = userProblemBestRepository
+                .findAllByProblemIdOrderByBestScoreDesc(problemId)
+                .stream()
+                .filter(upb -> upb.getBestSubmission() != null)
+                .filter(upb -> Boolean.TRUE.equals(upb.getBestSubmission().getIsAccepted()))
+                .filter(upb -> !upb.getUser().getId().equals(currentUserId))
+                .filter(upb -> keyword.isEmpty() || (upb.getUser() != null
+                        && upb.getUser().getUsername() != null
+                        && upb.getUser().getUsername().toLowerCase().contains(keyword)))
+                .filter(upb -> langFilter.isEmpty() || (upb.getBestSubmission().getLanguage() != null
+                        && upb.getBestSubmission().getLanguage().getCode() != null
+                        && upb.getBestSubmission().getLanguage().getCode().toLowerCase().contains(langFilter)))
+                .sorted(Comparator
+                        .comparing(UserProblemBestEntity::getBestScore, Comparator.reverseOrder())
+                        .thenComparing(upb -> upb.getBestSubmission().getCreatedAt()))
+                .skip(offset)
+                .limit(Math.max(1, limit))
+                .toList();
+
+        List<ProblemSolutionResponse> result = new ArrayList<>();
+        for (int i = 0; i < acceptedBest.size(); i++) {
+            UserProblemBestEntity entry = acceptedBest.get(i);
+            SubmissionEntity bestSubmission = entry.getBestSubmission();
+
+            result.add(ProblemSolutionResponse.builder()
+                    .submissionId(bestSubmission.getId())
+                    .userId(entry.getUser().getId())
+                    .username(entry.getUser().getUsername())
+                    .rank(i + offset + 1)
+                    .bestScore(entry.getBestScore())
+                    .languageName(bestSubmission.getLanguage() != null ? bestSubmission.getLanguage().getName() : null)
+                    .languageCode(bestSubmission.getLanguage() != null ? bestSubmission.getLanguage().getCode() : null)
+                    .statusRuntime(bestSubmission.getStatusRuntime())
+                    .statusMemory(bestSubmission.getStatusMemory())
+                    .submittedAt(bestSubmission.getCreatedAt())
+                    .codeContent(bestSubmission.getCodeContent())
+                    .build());
+        }
+
+        return result;
+    }
+
     private Specification<SubmissionEntity> buildSpecification(
             Long userId,
             Long problemId,
+            String search,
             String status) {
         
         return (root, query, cb) -> {
@@ -215,14 +278,19 @@ public class SubmissionService {
             if (problemId != null) {
                 predicates.add(cb.equal(root.get("problem").get("id"), problemId));
             }
+
+            // Filter theo problem title/code
+            if (search != null && !search.trim().isEmpty()) {
+                String keyword = "%" + search.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("problem").get("title")), keyword),
+                        cb.like(cb.lower(root.get("problem").get("code")), keyword)
+                ));
+            }
             
-            // Filter theo status (isAccepted)
+            // Filter chính xác theo state
             if (status != null && !status.isEmpty()) {
-                if (status.equalsIgnoreCase("ACCEPTED") || status.equalsIgnoreCase("AC")) {
-                    predicates.add(cb.equal(root.get("isAccepted"), true));
-                } else if (status.equalsIgnoreCase("REJECTED") || status.equalsIgnoreCase("REJECT") || status.equalsIgnoreCase("WA")) {
-                    predicates.add(cb.equal(root.get("isAccepted"), false));
-                }
+                predicates.add(cb.equal(root.get("state"), status.toUpperCase()));
             }
             
             // Loại bỏ submission đã được dùng trong contest (chỉ hiện submission non-contest)

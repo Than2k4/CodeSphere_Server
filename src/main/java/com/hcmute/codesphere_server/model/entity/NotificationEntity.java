@@ -64,6 +64,7 @@ public class NotificationEntity {
         POST_LIKE,
         POST_COMMENT,
         COMMENT_REPLY,
+        POST_MODERATION,
         MESSAGE,
         CONTEST_REMINDER
     }

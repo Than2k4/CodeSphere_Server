@@ -5,6 +5,7 @@ import com.hcmute.codesphere_server.model.payload.response.DataResponse;
 import com.hcmute.codesphere_server.model.payload.response.ProblemDetailResponse;
 import com.hcmute.codesphere_server.security.authentication.UserPrinciple;
 import com.hcmute.codesphere_server.service.admin.AdminProblemService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +27,26 @@ public class AdminProblemController {
 
     private final AdminProblemService adminProblemService;
     private final ProblemRepository problemRepository;
+
+    private boolean isAdmin(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+        UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
+        return userPrinciple.getAuthorities().stream()
+                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    private String getActorRole(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return "UNKNOWN";
+        }
+        UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
+        return userPrinciple.getAuthorities().stream()
+                .findFirst()
+                .map(auth -> auth.getAuthority())
+                .orElse("UNKNOWN");
+    }
 
     @GetMapping
     public ResponseEntity<DataResponse<Page<ProblemResponse>>> getAllProblems(
@@ -125,29 +146,27 @@ public class AdminProblemController {
     @PostMapping
     public ResponseEntity<DataResponse<ProblemDetailResponse>> createProblem(
             @Valid @RequestBody CreateProblemRequest request,
-            Authentication authentication) {
-        
-        // Kiểm tra authentication
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return ResponseEntity.status(401)
-                    .body(DataResponse.error("Unauthorized - Token không hợp lệ hoặc thiếu"));
-        }
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
 
-        // Kiểm tra quyền admin
-        UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
-        boolean isAdmin = userPrinciple.getAuthorities().stream()
-                .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
-        
-        if (!isAdmin) {
+        if (!isAdmin(authentication)) {
             return ResponseEntity.status(403)
                     .body(DataResponse.error("Forbidden - Chỉ admin mới có quyền thực hiện thao tác này"));
         }
 
         try {
             // Lấy userId từ token
+            UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
             Long authorId = Long.parseLong(userPrinciple.getUserId());
-            
-            ProblemDetailResponse response = adminProblemService.createProblem(request, authorId);
+
+            ProblemDetailResponse response = adminProblemService.createProblem(
+                request,
+                authorId,
+                userPrinciple.getEmail(),
+                getActorRole(authentication),
+                httpServletRequest.getRemoteAddr(),
+                httpServletRequest.getHeader("User-Agent")
+            );
             return ResponseEntity.ok(DataResponse.success(response));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
@@ -187,7 +206,8 @@ public class AdminProblemController {
     public ResponseEntity<DataResponse<ProblemDetailResponse>> updateProblem(
             @PathVariable Long id,
             @Valid @RequestBody CreateProblemRequest request,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
         
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(401)
@@ -204,7 +224,15 @@ public class AdminProblemController {
         }
 
         try {
-            ProblemDetailResponse response = adminProblemService.updateProblem(id, request);
+            ProblemDetailResponse response = adminProblemService.updateProblem(
+                    id,
+                    request,
+                    Long.parseLong(userPrinciple.getUserId()),
+                    userPrinciple.getEmail(),
+                    getActorRole(authentication),
+                    httpServletRequest.getRemoteAddr(),
+                    httpServletRequest.getHeader("User-Agent")
+            );
             return ResponseEntity.ok(DataResponse.success(response));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
@@ -215,7 +243,8 @@ public class AdminProblemController {
     @DeleteMapping("/{id}")
     public ResponseEntity<DataResponse<String>> deleteProblem(
             @PathVariable Long id,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
         
         if (authentication == null || !authentication.isAuthenticated()) {
             return ResponseEntity.status(401)
@@ -232,7 +261,14 @@ public class AdminProblemController {
         }
 
         try {
-            adminProblemService.deleteProblem(id);
+            adminProblemService.deleteProblem(
+                    id,
+                    Long.parseLong(userPrinciple.getUserId()),
+                    userPrinciple.getEmail(),
+                    getActorRole(authentication),
+                    httpServletRequest.getRemoteAddr(),
+                    httpServletRequest.getHeader("User-Agent")
+            );
             return ResponseEntity.ok(DataResponse.success("Problem deleted successfully"));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()

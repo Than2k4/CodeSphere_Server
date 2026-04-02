@@ -6,6 +6,7 @@ import com.hcmute.codesphere_server.model.payload.request.CreateContestRequest;
 import com.hcmute.codesphere_server.model.payload.response.*;
 import com.hcmute.codesphere_server.security.authentication.UserPrinciple;
 import com.hcmute.codesphere_server.service.admin.AdminContestService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -32,6 +33,17 @@ public class AdminContestController {
         UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
         return userPrinciple.getAuthorities().stream()
                 .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    private String getActorRole(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return "UNKNOWN";
+        }
+        UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
+        return userPrinciple.getAuthorities().stream()
+                .findFirst()
+                .map(auth -> auth.getAuthority())
+                .orElse("UNKNOWN");
     }
 
     @GetMapping
@@ -79,7 +91,8 @@ public class AdminContestController {
     @PostMapping
     public ResponseEntity<DataResponse<ContestDetailResponse>> createContest(
             @Valid @RequestBody CreateContestRequest request,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
 
         if (!isAdmin(authentication)) {
             return ResponseEntity.status(403)
@@ -90,7 +103,14 @@ public class AdminContestController {
             UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
             Long authorId = Long.parseLong(userPrinciple.getUserId());
 
-            ContestDetailResponse contest = adminContestService.createContest(request, authorId);
+                ContestDetailResponse contest = adminContestService.createContest(
+                    request,
+                    authorId,
+                    userPrinciple.getEmail(),
+                    getActorRole(authentication),
+                    httpServletRequest.getRemoteAddr(),
+                    httpServletRequest.getHeader("User-Agent")
+                );
             return ResponseEntity.ok(DataResponse.success(contest));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
@@ -102,7 +122,8 @@ public class AdminContestController {
     public ResponseEntity<DataResponse<ContestDetailResponse>> updateContest(
             @PathVariable Long id,
             @Valid @RequestBody CreateContestRequest request,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
 
         if (!isAdmin(authentication)) {
             return ResponseEntity.status(403)
@@ -113,7 +134,15 @@ public class AdminContestController {
             UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
             Long authorId = Long.parseLong(userPrinciple.getUserId());
 
-            ContestDetailResponse contest = adminContestService.updateContest(id, request, authorId);
+                ContestDetailResponse contest = adminContestService.updateContest(
+                    id,
+                    request,
+                    authorId,
+                    userPrinciple.getEmail(),
+                    getActorRole(authentication),
+                    httpServletRequest.getRemoteAddr(),
+                    httpServletRequest.getHeader("User-Agent")
+                );
             return ResponseEntity.ok(DataResponse.success(contest));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
@@ -124,7 +153,8 @@ public class AdminContestController {
     @DeleteMapping("/{id}")
     public ResponseEntity<DataResponse<String>> deleteContest(
             @PathVariable Long id,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
 
         if (!isAdmin(authentication)) {
             return ResponseEntity.status(403)
@@ -132,7 +162,15 @@ public class AdminContestController {
         }
 
         try {
-            adminContestService.deleteContest(id);
+            UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
+            adminContestService.deleteContest(
+                    id,
+                    Long.parseLong(userPrinciple.getUserId()),
+                    userPrinciple.getEmail(),
+                    getActorRole(authentication),
+                    httpServletRequest.getRemoteAddr(),
+                    httpServletRequest.getHeader("User-Agent")
+            );
             return ResponseEntity.ok(DataResponse.success("Xóa contest thành công"));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
@@ -144,7 +182,8 @@ public class AdminContestController {
     public ResponseEntity<DataResponse<String>> addProblemToContest(
             @PathVariable Long id,
             @Valid @RequestBody ContestProblemRequest request,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
 
         if (!isAdmin(authentication)) {
             return ResponseEntity.status(403)
@@ -152,7 +191,16 @@ public class AdminContestController {
         }
 
         try {
-            adminContestService.addProblemToContest(id, request);
+            UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
+            adminContestService.addProblemToContest(
+                    id,
+                    request,
+                    Long.parseLong(userPrinciple.getUserId()),
+                    userPrinciple.getEmail(),
+                    getActorRole(authentication),
+                    httpServletRequest.getRemoteAddr(),
+                    httpServletRequest.getHeader("User-Agent")
+            );
             return ResponseEntity.ok(DataResponse.success("Thêm problem vào contest thành công"));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
@@ -164,7 +212,8 @@ public class AdminContestController {
     public ResponseEntity<DataResponse<String>> removeProblemFromContest(
             @PathVariable Long id,
             @PathVariable Long problemId,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
 
         if (!isAdmin(authentication)) {
             return ResponseEntity.status(403)
@@ -172,7 +221,16 @@ public class AdminContestController {
         }
 
         try {
-            adminContestService.removeProblemFromContest(id, problemId);
+            UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
+            adminContestService.removeProblemFromContest(
+                    id,
+                    problemId,
+                    Long.parseLong(userPrinciple.getUserId()),
+                    userPrinciple.getEmail(),
+                    getActorRole(authentication),
+                    httpServletRequest.getRemoteAddr(),
+                    httpServletRequest.getHeader("User-Agent")
+            );
             return ResponseEntity.ok(DataResponse.success("Xóa problem khỏi contest thành công"));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
@@ -202,7 +260,8 @@ public class AdminContestController {
     @PutMapping("/{id}/toggle-visibility")
     public ResponseEntity<DataResponse<String>> toggleContestVisibility(
             @PathVariable Long id,
-            Authentication authentication) {
+            Authentication authentication,
+            HttpServletRequest httpServletRequest) {
 
         if (!isAdmin(authentication)) {
             return ResponseEntity.status(403)
@@ -210,7 +269,15 @@ public class AdminContestController {
         }
 
         try {
-            adminContestService.toggleContestVisibility(id);
+            UserPrinciple userPrinciple = (UserPrinciple) authentication.getPrincipal();
+            adminContestService.toggleContestVisibility(
+                    id,
+                    Long.parseLong(userPrinciple.getUserId()),
+                    userPrinciple.getEmail(),
+                    getActorRole(authentication),
+                    httpServletRequest.getRemoteAddr(),
+                    httpServletRequest.getHeader("User-Agent")
+            );
             return ResponseEntity.ok(DataResponse.success("Đã cập nhật trạng thái ẩn/hiện contest"));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()

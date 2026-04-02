@@ -43,8 +43,8 @@ public class CommentEntity {
 	private CommentEntity parent;
 
 	@Lob
-	@Column(nullable = false)
-	private String content;
+    @Column(columnDefinition = "LONGTEXT", nullable = false)
+    private String content;
 
 	@Column(nullable = false)
 	private Boolean isAccepted = false;

@@ -34,8 +34,8 @@ public class PostEntity {
 	private String title;
 
 	@Lob
-	@Column(nullable = false)
-	private String content;
+    @Column(columnDefinition = "LONGTEXT", nullable = false)
+    private String content;
 
 	@Column(length = 500)
 	private String imageUrl; // URL hình ảnh đính kèm (deprecated, dùng images)
@@ -61,6 +61,22 @@ public class PostEntity {
 
 	@Column(nullable = false)
 	private Boolean isResolved = false;
+
+	@Column(nullable = false)
+	private Boolean isDeleted = false;
+
+	@Column(nullable = false)
+	private Integer reportCount = 0;
+
+	private Instant lastReportedAt;
+
+	@Column(length = 50)
+	private String moderationReasonCode;
+
+	@Column(length = 500)
+	private String moderationReasonDetail;
+
+	private Instant moderatedAt;
 
 	@Column(nullable = false, updatable = false)
 	private Instant createdAt = Instant.now();
@@ -95,6 +111,12 @@ public class PostEntity {
 	public void setBlocked(Boolean blocked) { isBlocked = blocked; }
 	public Boolean getResolved() { return isResolved; }
 	public void setResolved(Boolean resolved) { isResolved = resolved; }
+	public Boolean getDeleted() { return isDeleted; }
+	public void setDeleted(Boolean deleted) { isDeleted = deleted; }
+	public Integer getReportCount() { return reportCount; }
+	public void setReportCount(Integer reportCount) { this.reportCount = reportCount; }
+	public Instant getLastReportedAt() { return lastReportedAt; }
+	public void setLastReportedAt(Instant lastReportedAt) { this.lastReportedAt = lastReportedAt; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }
 	public Set<TagEntity> getTags() { return tags; }

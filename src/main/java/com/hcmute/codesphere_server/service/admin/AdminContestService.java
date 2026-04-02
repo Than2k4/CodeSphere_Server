@@ -3,6 +3,7 @@ package com.hcmute.codesphere_server.service.admin;
 import com.hcmute.codesphere_server.model.entity.*;
 import com.hcmute.codesphere_server.model.entity.embedded.ContestProblemKey;
 import com.hcmute.codesphere_server.model.enums.ContestType;
+import com.hcmute.codesphere_server.model.payload.request.AuditLogRecordRequest;
 import com.hcmute.codesphere_server.model.payload.request.ContestProblemRequest;
 import com.hcmute.codesphere_server.model.payload.request.CreateContestRequest;
 import com.hcmute.codesphere_server.model.payload.response.ContestDetailResponse;
@@ -10,6 +11,8 @@ import com.hcmute.codesphere_server.model.payload.response.ContestProblemRespons
 import com.hcmute.codesphere_server.model.payload.response.ContestResponse;
 import com.hcmute.codesphere_server.model.payload.response.ProblemResponse;
 import com.hcmute.codesphere_server.repository.common.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -31,9 +34,18 @@ public class AdminContestService {
     private final ContestRegistrationRepository contestRegistrationRepository;
     private final ProblemRepository problemRepository;
     private final UserRepository userRepository;
+        private final AuditLogService auditLogService;
+        private final ObjectMapper objectMapper;
 
     @Transactional
-    public ContestDetailResponse createContest(CreateContestRequest request, Long authorId) {
+        public ContestDetailResponse createContest(
+            CreateContestRequest request,
+            Long authorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         // Validate contestType
         if (request.getContestType() == null) {
             throw new RuntimeException("Contest type không được để trống");
@@ -122,6 +134,20 @@ public class AdminContestService {
             }
         }
 
+        recordAudit(
+                authorId,
+                actorUsername,
+                actorRole,
+                "CONTEST_CREATE",
+                contest.getId(),
+                contest.getTitle(),
+                null,
+                toJson(snapshotContest(contest)),
+                "Create contest",
+                ipAddress,
+                userAgent
+        );
+
         return mapToContestDetailResponse(contest, null);
     }
 
@@ -137,9 +163,19 @@ public class AdminContestService {
     }
 
     @Transactional
-    public ContestDetailResponse updateContest(Long contestId, CreateContestRequest request, Long authorId) {
+        public ContestDetailResponse updateContest(
+            Long contestId,
+            CreateContestRequest request,
+            Long authorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         ContestEntity contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new RuntimeException("Contest không tồn tại"));
+
+            String beforeState = toJson(snapshotContest(contest));
 
         if (contest.getIsDeleted()) {
             throw new RuntimeException("Contest đã bị xóa");
@@ -240,13 +276,36 @@ public class AdminContestService {
             }
         }
 
+        recordAudit(
+                authorId,
+                actorUsername,
+                actorRole,
+                "CONTEST_UPDATE",
+                contest.getId(),
+                contest.getTitle(),
+                beforeState,
+                toJson(snapshotContest(contest)),
+                "Update contest",
+                ipAddress,
+                userAgent
+        );
+
         return mapToContestDetailResponse(contest, null);
     }
 
     @Transactional
-    public void deleteContest(Long contestId) {
+        public void deleteContest(
+            Long contestId,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         ContestEntity contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new RuntimeException("Contest không tồn tại"));
+
+            String beforeState = toJson(snapshotContest(contest));
 
         // Chỉ soft delete contest, giữ nguyên tất cả dữ liệu liên quan
         // - contest_submissions: giữ lại để có lịch sử
@@ -258,12 +317,36 @@ public class AdminContestService {
         contest.setIsHidden(true);   // Ẩn khỏi danh sách
         contest.setUpdatedAt(Instant.now());
         contestRepository.save(contest);
+
+        recordAudit(
+            actorId,
+            actorUsername,
+            actorRole,
+            "CONTEST_DELETE",
+            contest.getId(),
+            contest.getTitle(),
+            beforeState,
+            null,
+            "Soft delete contest",
+            ipAddress,
+            userAgent
+        );
     }
 
     @Transactional
-    public void addProblemToContest(Long contestId, ContestProblemRequest request) {
+        public void addProblemToContest(
+            Long contestId,
+            ContestProblemRequest request,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         ContestEntity contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new RuntimeException("Contest không tồn tại"));
+
+        String beforeState = toJson(snapshotContest(contest));
 
         if (contest.getIsDeleted()) {
             throw new RuntimeException("Contest đã bị xóa");
@@ -302,16 +385,60 @@ public class AdminContestService {
             problem.setIsPublic(false);
             problemRepository.save(problem);
         }
+
+        recordAudit(
+                actorId,
+                actorUsername,
+                actorRole,
+                "CONTEST_ADD_PROBLEM",
+                contest.getId(),
+                contest.getTitle(),
+                beforeState,
+                toJson(snapshotContest(contest)),
+                "Add problem " + problem.getCode() + " to contest",
+                ipAddress,
+                userAgent
+        );
     }
 
     @Transactional
-    public void removeProblemFromContest(Long contestId, Long problemId) {
+        public void removeProblemFromContest(
+            Long contestId,
+            Long problemId,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
+            ContestEntity contest = contestRepository.findById(contestId)
+                .orElseThrow(() -> new RuntimeException("Contest không tồn tại"));
+
+            String beforeState = toJson(snapshotContest(contest));
+
         Optional<ContestProblemEntity> contestProblemOpt = contestProblemRepository.findByContestIdAndProblemId(contestId, problemId);
         if (contestProblemOpt.isEmpty()) {
             throw new RuntimeException("Problem không có trong contest");
         }
 
+            String removedProblemCode = contestProblemOpt.get().getProblem() != null
+                ? contestProblemOpt.get().getProblem().getCode()
+                : String.valueOf(problemId);
         contestProblemRepository.delete(contestProblemOpt.get());
+
+            recordAudit(
+                actorId,
+                actorUsername,
+                actorRole,
+                "CONTEST_REMOVE_PROBLEM",
+                contest.getId(),
+                contest.getTitle(),
+                beforeState,
+                toJson(snapshotContest(contest)),
+                "Remove problem " + removedProblemCode + " from contest",
+                ipAddress,
+                userAgent
+            );
     }
 
     public List<ContestRegistrationEntity> getContestRegistrations(Long contestId) {
@@ -350,9 +477,18 @@ public class AdminContestService {
     }
     
     @Transactional
-    public void toggleContestVisibility(Long contestId) {
+        public void toggleContestVisibility(
+            Long contestId,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         ContestEntity contest = contestRepository.findById(contestId)
                 .orElseThrow(() -> new RuntimeException("Contest không tồn tại"));
+
+            String beforeState = toJson(snapshotContest(contest));
         
         if (contest.getIsDeleted()) {
             throw new RuntimeException("Contest đã bị xóa");
@@ -362,6 +498,80 @@ public class AdminContestService {
         contest.setIsHidden(!Boolean.TRUE.equals(contest.getIsHidden()));
         contest.setUpdatedAt(Instant.now());
         contestRepository.save(contest);
+
+        recordAudit(
+                actorId,
+                actorUsername,
+                actorRole,
+                "CONTEST_TOGGLE_VISIBILITY",
+                contest.getId(),
+                contest.getTitle(),
+                beforeState,
+                toJson(snapshotContest(contest)),
+                Boolean.TRUE.equals(contest.getIsHidden()) ? "Hide contest" : "Show contest",
+                ipAddress,
+                userAgent
+        );
+    }
+
+    private java.util.Map<String, Object> snapshotContest(ContestEntity contest) {
+        java.util.Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+        snapshot.put("id", contest.getId());
+        snapshot.put("title", contest.getTitle());
+        snapshot.put("contestType", contest.getContestType() != null ? contest.getContestType().name() : null);
+        snapshot.put("durationMinutes", contest.getDurationMinutes());
+        snapshot.put("startTime", contest.getStartTime());
+        snapshot.put("endTime", contest.getEndTime());
+        snapshot.put("isPublic", contest.getIsPublic());
+        snapshot.put("isHidden", contest.getIsHidden());
+        snapshot.put("isDeleted", contest.getIsDeleted());
+        snapshot.put("problemIds", contestProblemRepository.findByContestIdOrderByProblemOrder(contest.getId()).stream()
+                .map(cp -> cp.getProblem() != null ? cp.getProblem().getId() : null)
+                .collect(Collectors.toList()));
+        return snapshot;
+    }
+
+    private String toJson(Object data) {
+        try {
+            return objectMapper.writeValueAsString(data);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    private void recordAudit(
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String action,
+            Long objectId,
+            String objectLabel,
+            String beforeState,
+            String afterState,
+            String changeSummary,
+            String ipAddress,
+            String userAgent
+    ) {
+        try {
+            auditLogService.record(
+                    AuditLogRecordRequest.builder()
+                            .actorId(actorId)
+                            .actorUsername(actorUsername)
+                            .actorRole(actorRole)
+                            .action(action)
+                            .objectType("CONTEST")
+                            .objectId(objectId)
+                            .objectLabel(objectLabel)
+                            .beforeState(beforeState)
+                            .afterState(afterState)
+                            .changeSummary(changeSummary)
+                            .ipAddress(ipAddress)
+                            .userAgent(userAgent)
+                            .build()
+            );
+        } catch (Exception ignored) {
+            // Keep contest action successful even if audit log fails
+        }
     }
 
     private ContestResponse mapToContestResponse(ContestEntity contest, Long userId) {

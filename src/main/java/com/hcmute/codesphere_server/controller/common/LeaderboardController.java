@@ -85,9 +85,10 @@ public class LeaderboardController {
      * GET /api/v1/leaderboard/global
      */
     @GetMapping("/global")
-    public ResponseEntity<DataResponse<List<GlobalLeaderboardResponse>>> getGlobalLeaderboard() {
+    public ResponseEntity<DataResponse<List<GlobalLeaderboardResponse>>> getGlobalLeaderboard(
+            @RequestParam(defaultValue = "all") String season) {
         try {
-            List<GlobalLeaderboardResponse> leaderboard = leaderboardService.getGlobalLeaderboard();
+            List<GlobalLeaderboardResponse> leaderboard = leaderboardService.getGlobalLeaderboard(season);
             return ResponseEntity.ok(DataResponse.success(leaderboard));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()

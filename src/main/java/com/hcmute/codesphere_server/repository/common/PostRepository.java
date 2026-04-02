@@ -14,13 +14,13 @@ import java.util.Optional;
 @Repository
 public interface PostRepository extends JpaRepository<PostEntity, Long>, JpaSpecificationExecutor<PostEntity> {
     
-    @Query("SELECT p FROM PostEntity p WHERE p.id = :id AND p.isBlocked = false")
+    @Query("SELECT p FROM PostEntity p WHERE p.id = :id AND p.isBlocked = false AND p.isDeleted = false")
     Optional<PostEntity> findByIdAndNotBlocked(@Param("id") Long id);
     
-    @Query("SELECT p FROM PostEntity p WHERE p.author.id = :authorId AND p.isBlocked = false")
+    @Query("SELECT p FROM PostEntity p WHERE p.author.id = :authorId AND p.isBlocked = false AND p.isDeleted = false")
     Page<PostEntity> findByAuthorId(@Param("authorId") Long authorId, Pageable pageable);
     
-    @Query("SELECT COUNT(p) FROM PostEntity p WHERE p.author.id = :authorId AND p.isBlocked = false")
+    @Query("SELECT COUNT(p) FROM PostEntity p WHERE p.author.id = :authorId AND p.isBlocked = false AND p.isDeleted = false")
     Long countByAuthorId(@Param("authorId") Long authorId);
 }
 

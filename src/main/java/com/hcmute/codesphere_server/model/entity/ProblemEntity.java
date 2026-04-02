@@ -56,6 +56,10 @@ public class ProblemEntity {
 	@Builder.Default
 	private Boolean isPublic = true; // true = public (hiện trong problem list), false = contest-only (ẩn khỏi problem list)
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean isContest = false;
+
 	@Column(nullable = false, updatable = false)
 	private Instant createdAt = Instant.now();
 
@@ -97,6 +101,8 @@ public class ProblemEntity {
 	public void setStatus(Boolean status) { this.status = status; }
 	public Boolean getIsPublic() { return isPublic; }
 	public void setIsPublic(Boolean isPublic) { this.isPublic = isPublic; }
+    public Boolean getIsContest() { return isContest; }
+    public void setIsContest(Boolean isContest) { this.isContest = isContest; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }
 	public Set<CategoryEntity> getCategories() { return categories; }

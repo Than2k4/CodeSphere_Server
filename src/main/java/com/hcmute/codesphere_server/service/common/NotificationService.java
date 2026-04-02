@@ -232,6 +232,26 @@ public class NotificationService {
         );
     }
 
+    public void notifyPostModeration(Long postAuthorId, Long moderatorId, Long postId,
+                                     String action, String reasonCode, String reasonDetail) {
+        String title = "Bài viết của bạn đã bị xử lý";
+        String content = "Bài viết đã bị " + action + ". Lý do: " + reasonCode;
+        if (reasonDetail != null && !reasonDetail.trim().isEmpty()) {
+            content += " - " + reasonDetail.trim();
+        }
+
+        createNotification(
+                postAuthorId,
+                NotificationEntity.NotificationType.POST_MODERATION,
+                title,
+                content,
+                moderatorId,
+                postId,
+                null,
+                null
+        );
+    }
+
     public void notifyMessage(Long receiverId, Long senderId, String senderName, Long conversationId, 
                               String conversationName, ConversationEntity.ConversationType conversationType) {
         String title;

@@ -3,11 +3,14 @@ package com.hcmute.codesphere_server.service.admin;
 import com.hcmute.codesphere_server.model.entity.AccountEntity;
 import com.hcmute.codesphere_server.model.entity.RoleEntity;
 import com.hcmute.codesphere_server.model.entity.UserEntity;
+import com.hcmute.codesphere_server.model.payload.request.AuditLogRecordRequest;
 import com.hcmute.codesphere_server.model.payload.response.UserManagementResponse;
 import com.hcmute.codesphere_server.repository.common.AccountRepository;
 import com.hcmute.codesphere_server.repository.common.RoleRepository;
 import com.hcmute.codesphere_server.repository.common.SubmissionRepository;
 import com.hcmute.codesphere_server.repository.common.UserRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -27,6 +30,8 @@ public class AdminUserService {
     private final AccountRepository accountRepository;
     private final RoleRepository roleRepository;
     private final SubmissionRepository submissionRepository;
+    private final AuditLogService auditLogService;
+    private final ObjectMapper objectMapper;
 
     public Page<UserManagementResponse> getUsers(Pageable pageable, String search, String role, String status) {
         Specification<UserEntity> spec = Specification.where(null);
@@ -102,13 +107,24 @@ public class AdminUserService {
     }
 
     @Transactional
-    public UserManagementResponse updateUserStatus(Long userId, String status) {
+        public UserManagementResponse updateUserStatus(
+            Long userId,
+            String status,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại"));
 
         if (user.getIsDeleted()) {
             throw new RuntimeException("User đã bị xóa");
         }
+
+        AccountEntity account = accountRepository.findByUser(user).orElse(null);
+        String beforeState = toJson(snapshotUser(user, account));
 
         if ("ACTIVE".equalsIgnoreCase(status)) {
             user.setStatus(true);
@@ -119,11 +135,35 @@ public class AdminUserService {
         }
 
         user = userRepository.save(user);
+    account = accountRepository.findByUser(user).orElse(null);
+    String afterState = toJson(snapshotUser(user, account));
+
+    recordAudit(
+        actorId,
+        actorUsername,
+        actorRole,
+        "USER_STATUS_UPDATE",
+        user.getId(),
+        user.getUsername(),
+        beforeState,
+        afterState,
+        "Update user status to " + status,
+        ipAddress,
+        userAgent
+    );
+
         return mapToUserManagementResponse(user);
     }
 
     @Transactional
-    public UserManagementResponse blockUser(Long userId) {
+        public UserManagementResponse blockUser(
+            Long userId,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại"));
 
@@ -133,15 +173,39 @@ public class AdminUserService {
 
         AccountEntity account = accountRepository.findByUser(user)
                 .orElseThrow(() -> new RuntimeException("Account không tồn tại"));
+
+        String beforeState = toJson(snapshotUser(user, account));
 
         account.setIsBlocked(true);
         accountRepository.save(account);
 
+        String afterState = toJson(snapshotUser(user, account));
+        recordAudit(
+            actorId,
+            actorUsername,
+            actorRole,
+            "USER_BLOCK",
+            user.getId(),
+            user.getUsername(),
+            beforeState,
+            afterState,
+            "Block user account",
+            ipAddress,
+            userAgent
+        );
+
         return mapToUserManagementResponse(user);
     }
 
     @Transactional
-    public UserManagementResponse unblockUser(Long userId) {
+        public UserManagementResponse unblockUser(
+            Long userId,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại"));
 
@@ -152,14 +216,39 @@ public class AdminUserService {
         AccountEntity account = accountRepository.findByUser(user)
                 .orElseThrow(() -> new RuntimeException("Account không tồn tại"));
 
+        String beforeState = toJson(snapshotUser(user, account));
+
         account.setIsBlocked(false);
         accountRepository.save(account);
+
+        String afterState = toJson(snapshotUser(user, account));
+        recordAudit(
+            actorId,
+            actorUsername,
+            actorRole,
+            "USER_UNBLOCK",
+            user.getId(),
+            user.getUsername(),
+            beforeState,
+            afterState,
+            "Unblock user account",
+            ipAddress,
+            userAgent
+        );
 
         return mapToUserManagementResponse(user);
     }
 
     @Transactional
-    public UserManagementResponse changeUserRole(Long userId, String roleName) {
+        public UserManagementResponse changeUserRole(
+            Long userId,
+            String roleName,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại"));
 
@@ -173,20 +262,47 @@ public class AdminUserService {
         AccountEntity account = accountRepository.findByUser(user)
                 .orElseThrow(() -> new RuntimeException("Account không tồn tại"));
 
+        String beforeState = toJson(snapshotUser(user, account));
+
         account.setRole(role);
         accountRepository.save(account);
+
+        String afterState = toJson(snapshotUser(user, account));
+        recordAudit(
+            actorId,
+            actorUsername,
+            actorRole,
+            "USER_ROLE_CHANGE",
+            user.getId(),
+            user.getUsername(),
+            beforeState,
+            afterState,
+            "Change user role to " + role.getName(),
+            ipAddress,
+            userAgent
+        );
 
         return mapToUserManagementResponse(user);
     }
 
     @Transactional
-    public void deleteUser(Long userId) {
+        public void deleteUser(
+            Long userId,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User không tồn tại"));
 
         if (user.getIsDeleted()) {
             throw new RuntimeException("User đã bị xóa");
         }
+
+        AccountEntity account = accountRepository.findByUser(user).orElse(null);
+        String beforeState = toJson(snapshotUser(user, account));
 
         // Soft delete
         user.setIsDeleted(true);
@@ -196,10 +312,26 @@ public class AdminUserService {
         // Also soft delete account
         Optional<AccountEntity> accountOpt = accountRepository.findByUser(user);
         if (accountOpt.isPresent()) {
-            AccountEntity account = accountOpt.get();
-            account.setIsDeleted(true);
-            accountRepository.save(account);
+            AccountEntity accountInDb = accountOpt.get();
+            accountInDb.setIsDeleted(true);
+            accountRepository.save(accountInDb);
         }
+
+        account = accountRepository.findByUser(user).orElse(null);
+        String afterState = toJson(snapshotUser(user, account));
+        recordAudit(
+                actorId,
+                actorUsername,
+                actorRole,
+                "USER_DELETE",
+                user.getId(),
+                user.getUsername(),
+                beforeState,
+                afterState,
+                "Soft delete user and account",
+                ipAddress,
+                userAgent
+        );
     }
 
     private UserManagementResponse mapToUserManagementResponse(UserEntity user) {
@@ -239,6 +371,64 @@ public class AdminUserService {
                 .totalSubmissions(totalSubmissions)
                 .totalSolved(totalSolved)
                 .build();
+    }
+
+    private java.util.Map<String, Object> snapshotUser(UserEntity user, AccountEntity account) {
+        java.util.Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+        snapshot.put("id", user.getId());
+        snapshot.put("username", user.getUsername());
+        snapshot.put("status", user.getStatus());
+        snapshot.put("isDeleted", user.getIsDeleted());
+        if (account != null) {
+            snapshot.put("email", account.getEmail());
+            snapshot.put("role", account.getRole() != null ? account.getRole().getName() : null);
+            snapshot.put("isBlocked", account.getIsBlocked());
+            snapshot.put("accountDeleted", account.getIsDeleted());
+        }
+        return snapshot;
+    }
+
+    private String toJson(Object data) {
+        try {
+            return objectMapper.writeValueAsString(data);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    private void recordAudit(
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String action,
+            Long objectId,
+            String objectLabel,
+            String beforeState,
+            String afterState,
+            String changeSummary,
+            String ipAddress,
+            String userAgent
+    ) {
+        try {
+            auditLogService.record(
+                    AuditLogRecordRequest.builder()
+                            .actorId(actorId)
+                            .actorUsername(actorUsername)
+                            .actorRole(actorRole)
+                            .action(action)
+                            .objectType("USER")
+                            .objectId(objectId)
+                            .objectLabel(objectLabel)
+                            .beforeState(beforeState)
+                            .afterState(afterState)
+                            .changeSummary(changeSummary)
+                            .ipAddress(ipAddress)
+                            .userAgent(userAgent)
+                            .build()
+            );
+        } catch (Exception ignored) {
+            // Keep user management action successful even if audit log fails
+        }
     }
 }
 

@@ -34,6 +34,9 @@ public class PostLikeEntity {
 	@Column(nullable = false)
 	private Integer vote; // +1/-1
 
+	@Column(name = "reaction_type", length = 20)
+	private String reactionType;
+
 	@Column(nullable = false)
 	private Instant createdAt = Instant.now();
 
@@ -66,6 +69,8 @@ public class PostLikeEntity {
 	}
 	public Integer getVote() { return vote; }
 	public void setVote(Integer vote) { this.vote = vote; }
+	public String getReactionType() { return reactionType; }
+	public void setReactionType(String reactionType) { this.reactionType = reactionType; }
 	public Instant getCreatedAt() { return createdAt; }
 	public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }

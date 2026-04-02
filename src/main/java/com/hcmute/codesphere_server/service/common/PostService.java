@@ -1,8 +1,10 @@
 package com.hcmute.codesphere_server.service.common;
 
 import com.hcmute.codesphere_server.model.entity.*;
+import com.hcmute.codesphere_server.model.enums.ModerationReasonCode;
 import com.hcmute.codesphere_server.model.enums.TagType;
 import com.hcmute.codesphere_server.model.payload.request.CreatePostRequest;
+import com.hcmute.codesphere_server.model.payload.request.ReportPostRequest;
 import com.hcmute.codesphere_server.model.payload.request.UpdatePostRequest;
 import com.hcmute.codesphere_server.model.payload.request.VoteRequest;
 import com.hcmute.codesphere_server.model.payload.response.*;
@@ -11,6 +13,7 @@ import com.hcmute.codesphere_server.util.SlugUtils;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -30,6 +33,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PostService {
 
+    private static final Set<String> ALLOWED_REACTION_TYPES = Set.of("LIKE", "LOVE", "HAHA", "WOW", "SAD", "ANGRY");
+
     private final PostRepository postRepository;
     private final PostLikeRepository postLikeRepository;
     private final PostViewRepository postViewRepository;
@@ -37,6 +42,8 @@ public class PostService {
     private final CommentLikeRepository commentLikeRepository;
     private final UserRepository userRepository;
     private final TagRepository tagRepository;
+    private final PostReportRepository postReportRepository;
+    private final PostShareRepository postShareRepository;
     private final NotificationService notificationService;
     private final FollowRepository followRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -68,6 +75,8 @@ public class PostService {
                 .isAnonymous(request.getIsAnonymous() != null ? request.getIsAnonymous() : false)
                 .isBlocked(false)
                 .isResolved(false)
+                .isDeleted(false)
+                .reportCount(0)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .tags(new HashSet<>())
@@ -265,7 +274,9 @@ public class PostService {
             throw new RuntimeException("Bạn không có quyền xóa bài thảo luận này");
         }
 
+        post.setIsDeleted(true);
         post.setIsBlocked(true);
+        post.setUpdatedAt(Instant.now());
         postRepository.save(post);
     }
 
@@ -284,18 +295,29 @@ public class PostService {
             throw new RuntimeException("Vote phải là 1 (upvote), -1 (downvote), hoặc 0 (remove)");
         }
 
+        String normalizedReactionType = normalizeReactionType(request.getReactionType());
+        if (voteValue == 1 && normalizedReactionType == null) {
+            normalizedReactionType = "LIKE";
+        }
+
         if (existingVote.isPresent()) {
             PostLikeEntity vote = existingVote.get();
             if (voteValue == 0) {
                 // Xóa vote
                 postLikeRepository.delete(vote);
             } else if (vote.getVote().equals(voteValue)) {
-                // Đã vote cùng loại -> xóa vote
-                postLikeRepository.delete(vote);
-                voteValue = 0;
+                if (voteValue == 1 && normalizedReactionType != null) {
+                    vote.setReactionType(normalizedReactionType);
+                    postLikeRepository.save(vote);
+                } else {
+                    // Đã vote cùng loại -> xóa vote
+                    postLikeRepository.delete(vote);
+                    voteValue = 0;
+                }
             } else {
                 // Đổi vote
                 vote.setVote(voteValue);
+                vote.setReactionType(voteValue == 1 ? normalizedReactionType : null);
                 postLikeRepository.save(vote);
             }
         } else {
@@ -303,6 +325,7 @@ public class PostService {
                 // Tạo vote mới - không dùng builder để tránh lỗi với @EmbeddedId
                 PostLikeEntity newVote = new PostLikeEntity();
                 newVote.setVote(voteValue);
+                newVote.setReactionType(voteValue == 1 ? normalizedReactionType : null);
                 newVote.setCreatedAt(Instant.now());
                 // Set post và user - sẽ tự động set id thông qua setter
                 newVote.setPost(post);
@@ -340,6 +363,103 @@ public class PostService {
                 .build();
     }
 
+            @Transactional(readOnly = true)
+            public List<PostReactionUserResponse> getPostReactionUsers(Long postId, int limit) {
+            PostEntity post = postRepository.findByIdAndNotBlocked(postId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bài thảo luận"));
+
+            int safeLimit = Math.max(1, Math.min(limit, 100));
+            List<PostLikeEntity> likes = postLikeRepository.findTopUpvoteUsersByPostId(
+                post.getId(),
+                PageRequest.of(0, safeLimit)
+            );
+
+            return likes.stream()
+                .map(like -> PostReactionUserResponse.builder()
+                    .userId(like.getUser().getId())
+                    .username(like.getUser().getUsername())
+                    .avatar(like.getUser().getAvatar())
+                    .reactedAt(like.getCreatedAt())
+                    .build())
+                .collect(Collectors.toList());
+            }
+
+    @Transactional(readOnly = true)
+    public PostReactionSummaryResponse getPostReactionSummary(Long postId) {
+        PostEntity post = postRepository.findByIdAndNotBlocked(postId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bài thảo luận"));
+
+        List<Object[]> summaryRows = postLikeRepository.getReactionSummaryByPostId(post.getId());
+
+        List<ReactionSummaryItemResponse> allReactions = summaryRows.stream()
+                .map(row -> ReactionSummaryItemResponse.builder()
+                        .reactionType(row[0] != null ? row[0].toString() : "LIKE")
+                        .count(row[1] != null ? ((Number) row[1]).longValue() : 0L)
+                        .build())
+                .collect(Collectors.toList());
+
+        long totalReactions = allReactions.stream().mapToLong(ReactionSummaryItemResponse::getCount).sum();
+        List<ReactionSummaryItemResponse> topReactions = allReactions.stream().limit(2).collect(Collectors.toList());
+
+        return PostReactionSummaryResponse.builder()
+                .postId(postId)
+                .totalReactions(totalReactions)
+                .topReactions(topReactions)
+                .build();
+    }
+
+            @Transactional
+            public void markPostShared(Long postId, Long userId) {
+            PostEntity post = postRepository.findByIdAndNotBlocked(postId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bài thảo luận"));
+
+            UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy user"));
+
+            boolean alreadyShared = postShareRepository.findByPostIdAndUserId(postId, userId).isPresent();
+            if (alreadyShared) {
+                return;
+            }
+
+            PostShareEntity share = PostShareEntity.builder()
+                .post(post)
+                .user(user)
+                .createdAt(Instant.now())
+                .build();
+
+            postShareRepository.save(share);
+            }
+
+            @Transactional(readOnly = true)
+            public List<PostShareUserResponse> getPostShareUsers(Long postId, int limit) {
+            PostEntity post = postRepository.findByIdAndNotBlocked(postId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bài thảo luận"));
+
+            int safeLimit = Math.max(1, Math.min(limit, 100));
+            List<PostShareEntity> shares = postShareRepository.findTopSharesByPostId(post.getId(), PageRequest.of(0, safeLimit));
+
+            return shares.stream()
+                .map(share -> PostShareUserResponse.builder()
+                    .userId(share.getUser().getId())
+                    .username(share.getUser().getUsername())
+                    .avatar(share.getUser().getAvatar())
+                    .sharedAt(share.getCreatedAt())
+                    .build())
+                .collect(Collectors.toList());
+            }
+
+    private String normalizeReactionType(String reactionType) {
+        if (reactionType == null || reactionType.trim().isEmpty()) {
+            return null;
+        }
+
+        String normalized = reactionType.trim().toUpperCase();
+        if (!ALLOWED_REACTION_TYPES.contains(normalized)) {
+            throw new RuntimeException("Reaction type không hợp lệ");
+        }
+        return normalized;
+    }
+
     @Transactional
     public PostDetailResponse markAsResolved(Long postId, Long userId) {
         PostEntity post = postRepository.findByIdAndNotBlocked(postId)
@@ -356,12 +476,54 @@ public class PostService {
         return mapToPostDetailResponse(post, userId);
     }
 
+    @Transactional
+    public void reportPost(Long postId, Long reporterId, ReportPostRequest request) {
+        PostEntity post = postRepository.findByIdAndNotBlocked(postId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bài thảo luận"));
+
+        if (post.getAuthor().getId().equals(reporterId)) {
+            throw new RuntimeException("Bạn không thể tự báo cáo bài viết của mình");
+        }
+
+        if (postReportRepository.existsByPostIdAndReporterId(postId, reporterId)) {
+            throw new RuntimeException("Bạn đã báo cáo bài viết này trước đó");
+        }
+
+        validateReasonCode(request.getReasonCode());
+
+        UserEntity reporter = userRepository.findById(reporterId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy user"));
+
+        PostReportEntity report = PostReportEntity.builder()
+                .post(post)
+                .reporter(reporter)
+                .reasonCode(request.getReasonCode().trim().toUpperCase())
+                .reasonDetail(request.getReasonDetail())
+                .createdAt(Instant.now())
+                .build();
+        postReportRepository.save(report);
+
+        int currentCount = post.getReportCount() != null ? post.getReportCount() : 0;
+        post.setReportCount(currentCount + 1);
+        post.setLastReportedAt(Instant.now());
+        postRepository.save(post);
+    }
+
+    private void validateReasonCode(String reasonCode) {
+        try {
+            ModerationReasonCode.valueOf(reasonCode.trim().toUpperCase());
+        } catch (Exception e) {
+            throw new RuntimeException("Mã lý do không hợp lệ");
+        }
+    }
+
     private Specification<PostEntity> buildSpecification(Long authorId, String tagSlug, Boolean isResolved, String searchQuery, Boolean followedOnly, Long userId) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             
             // Chỉ lấy posts chưa bị block
             predicates.add(cb.equal(root.get("isBlocked"), false));
+            predicates.add(cb.equal(root.get("isDeleted"), false));
             
             if (authorId != null) {
                 predicates.add(cb.equal(root.get("author").get("id"), authorId));

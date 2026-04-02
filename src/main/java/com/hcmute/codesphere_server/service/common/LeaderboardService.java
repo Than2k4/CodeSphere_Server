@@ -5,11 +5,14 @@ import com.hcmute.codesphere_server.model.entity.UserProblemBestEntity;
 import com.hcmute.codesphere_server.model.payload.response.GlobalLeaderboardResponse;
 import com.hcmute.codesphere_server.model.payload.response.LeaderboardResponse;
 import com.hcmute.codesphere_server.repository.common.ProblemRepository;
+import com.hcmute.codesphere_server.repository.common.SubmissionRepository;
 import com.hcmute.codesphere_server.repository.common.UserProblemBestRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,6 +22,7 @@ public class LeaderboardService {
 
     private final UserProblemBestRepository userProblemBestRepository;
     private final ProblemRepository problemRepository;
+    private final SubmissionRepository submissionRepository;
 
     @Transactional(readOnly = true)
     public List<LeaderboardResponse> getLeaderboard(Long problemId) {
@@ -84,8 +88,19 @@ public class LeaderboardService {
      * Lấy global leaderboard - xếp hạng tất cả users theo tổng số bài đã giải đúng
      */
     @Transactional(readOnly = true)
-    public List<GlobalLeaderboardResponse> getGlobalLeaderboard() {
-        List<Object[]> results = userProblemBestRepository.findAllUsersWithSolvedCount();
+    public List<GlobalLeaderboardResponse> getGlobalLeaderboard(String season) {
+        String normalizedSeason = season == null ? "all" : season.trim().toLowerCase();
+
+        List<Object[]> results;
+        if ("weekly".equals(normalizedSeason)) {
+            Instant fromDate = Instant.now().minus(7, ChronoUnit.DAYS);
+            results = submissionRepository.findUsersWithSolvedCountSince(fromDate);
+        } else if ("monthly".equals(normalizedSeason)) {
+            Instant fromDate = Instant.now().minus(30, ChronoUnit.DAYS);
+            results = submissionRepository.findUsersWithSolvedCountSince(fromDate);
+        } else {
+            results = userProblemBestRepository.findAllUsersWithSolvedCount();
+        }
         
         List<GlobalLeaderboardResponse> leaderboard = new ArrayList<>();
         for (int i = 0; i < results.size(); i++) {

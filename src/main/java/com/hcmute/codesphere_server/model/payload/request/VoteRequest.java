@@ -14,5 +14,7 @@ public class VoteRequest {
     
     @NotNull(message = "Vote không được để trống")
     private Integer vote; // 1 = upvote, -1 = downvote, 0 = remove vote
+
+    private String reactionType; // LIKE, LOVE, HAHA, WOW, SAD, ANGRY
 }
 

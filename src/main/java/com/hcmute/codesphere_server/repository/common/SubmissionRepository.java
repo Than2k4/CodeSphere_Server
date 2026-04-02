@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.Optional;
 
 @Repository
@@ -74,5 +75,20 @@ public interface SubmissionRepository extends JpaRepository<SubmissionEntity, Lo
     @Query("SELECT COUNT(DISTINCT s.user.id) FROM SubmissionEntity s " +
            "WHERE s.problem.id = :problemId AND s.isAccepted = true AND s.isDeleted = false")
     Long countDistinctUsersSolvedByProblemId(@Param("problemId") Long problemId);
+
+    @Query(value = "SELECT s.user_id, u.username, " +
+           "COUNT(DISTINCT s.problem_id) as totalSolved, " +
+           "COUNT(DISTINCT CASE WHEN p.level = 'EASY' THEN s.problem_id END) as solvedEasy, " +
+           "COUNT(DISTINCT CASE WHEN p.level = 'MEDIUM' THEN s.problem_id END) as solvedMedium, " +
+           "COUNT(DISTINCT CASE WHEN p.level = 'HARD' THEN s.problem_id END) as solvedHard " +
+           "FROM submissions s " +
+           "INNER JOIN users u ON s.user_id = u.id " +
+           "INNER JOIN problems p ON s.problem_id = p.id " +
+           "WHERE s.is_deleted = false " +
+           "AND s.is_accepted = true " +
+           "AND s.created_at >= :fromDate " +
+           "GROUP BY s.user_id, u.username " +
+           "ORDER BY totalSolved DESC, s.user_id ASC", nativeQuery = true)
+    java.util.List<Object[]> findUsersWithSolvedCountSince(@Param("fromDate") Instant fromDate);
 }
 

@@ -2,9 +2,12 @@ package com.hcmute.codesphere_server.service.admin;
 
 import com.hcmute.codesphere_server.model.entity.*;
 import com.hcmute.codesphere_server.model.enums.ContestType;
+import com.hcmute.codesphere_server.model.payload.request.AuditLogRecordRequest;
 import com.hcmute.codesphere_server.model.payload.request.CreateProblemRequest;
 import com.hcmute.codesphere_server.model.payload.response.ProblemDetailResponse;
 import com.hcmute.codesphere_server.repository.common.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,9 +28,18 @@ public class AdminProblemService {
     private final CategoryRepository categoryRepository;
     private final LanguageRepository languageRepository;
     private final ContestProblemRepository contestProblemRepository;
+        private final AuditLogService auditLogService;
+        private final ObjectMapper objectMapper;
 
     @Transactional
-    public ProblemDetailResponse createProblem(CreateProblemRequest request, Long authorId) {
+        public ProblemDetailResponse createProblem(
+            CreateProblemRequest request,
+            Long authorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         // Kiểm tra code đã tồn tại chưa
         if (problemRepository.existsByCode(request.getCode())) {
             throw new RuntimeException("Problem với code '" + request.getCode() + "' đã tồn tại");
@@ -83,14 +95,38 @@ public class AdminProblemService {
 
         problem = problemRepository.save(problem);
 
+        recordAudit(
+            authorId,
+            actorUsername,
+            actorRole,
+            "PROBLEM_CREATE",
+            problem.getId(),
+            problem.getCode() + " - " + problem.getTitle(),
+            null,
+            toJson(snapshotProblem(problem)),
+            "Create problem",
+            ipAddress,
+            userAgent
+        );
+
         // Map sang response
         return mapToProblemDetailResponse(problem);
     }
 
     @Transactional
-    public ProblemDetailResponse updateProblem(Long problemId, CreateProblemRequest request) {
+        public ProblemDetailResponse updateProblem(
+            Long problemId,
+            CreateProblemRequest request,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+        ) {
         ProblemEntity problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new RuntimeException("Problem không tồn tại"));
+
+        String beforeState = toJson(snapshotProblem(problem));
 
         // Kiểm tra code đã tồn tại chưa (nếu thay đổi)
         if (!problem.getCode().equals(request.getCode()) && problemRepository.existsByCode(request.getCode())) {
@@ -184,6 +220,20 @@ public class AdminProblemService {
 
         problem = problemRepository.save(problem);
 
+        recordAudit(
+            actorId,
+            actorUsername,
+            actorRole,
+            "PROBLEM_UPDATE",
+            problem.getId(),
+            problem.getCode() + " - " + problem.getTitle(),
+            beforeState,
+            toJson(snapshotProblem(problem)),
+            "Update problem",
+            ipAddress,
+            userAgent
+        );
+
         return mapToProblemDetailResponse(problem);
     }
 
@@ -194,9 +244,18 @@ public class AdminProblemService {
     }
 
     @Transactional
-    public void deleteProblem(Long problemId) {
+    public void deleteProblem(
+            Long problemId,
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String ipAddress,
+            String userAgent
+    ) {
         ProblemEntity problem = problemRepository.findById(problemId)
                 .orElseThrow(() -> new RuntimeException("Problem không tồn tại"));
+
+        String beforeState = toJson(snapshotProblem(problem));
 
         // Kiểm tra problem có đang được dùng trong contest không
         List<ContestProblemEntity> contestProblems = contestProblemRepository.findByProblemId(problemId);
@@ -215,6 +274,78 @@ public class AdminProblemService {
 
         // Xóa problem
         problemRepository.delete(problem);
+
+        recordAudit(
+                actorId,
+                actorUsername,
+                actorRole,
+                "PROBLEM_DELETE",
+                problemId,
+                problem.getCode() + " - " + problem.getTitle(),
+                beforeState,
+                null,
+                "Delete problem",
+                ipAddress,
+                userAgent
+        );
+    }
+
+    private java.util.Map<String, Object> snapshotProblem(ProblemEntity problem) {
+        java.util.Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+        snapshot.put("id", problem.getId());
+        snapshot.put("code", problem.getCode());
+        snapshot.put("title", problem.getTitle());
+        snapshot.put("level", problem.getLevel());
+        snapshot.put("timeLimitMs", problem.getTimeLimitMs());
+        snapshot.put("memoryLimitMb", problem.getMemoryLimitMb());
+        snapshot.put("status", problem.getStatus());
+        snapshot.put("isPublic", problem.getIsPublic());
+        snapshot.put("categoryIds", problem.getCategories() == null ? java.util.List.of() : problem.getCategories().stream().map(CategoryEntity::getId).sorted().collect(Collectors.toList()));
+        snapshot.put("languageIds", problem.getLanguages() == null ? java.util.List.of() : problem.getLanguages().stream().map(LanguageEntity::getId).sorted().collect(Collectors.toList()));
+        return snapshot;
+    }
+
+    private String toJson(Object data) {
+        try {
+            return objectMapper.writeValueAsString(data);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    private void recordAudit(
+            Long actorId,
+            String actorUsername,
+            String actorRole,
+            String action,
+            Long objectId,
+            String objectLabel,
+            String beforeState,
+            String afterState,
+            String changeSummary,
+            String ipAddress,
+            String userAgent
+    ) {
+        try {
+            auditLogService.record(
+                    AuditLogRecordRequest.builder()
+                            .actorId(actorId)
+                            .actorUsername(actorUsername)
+                            .actorRole(actorRole)
+                            .action(action)
+                            .objectType("PROBLEM")
+                            .objectId(objectId)
+                            .objectLabel(objectLabel)
+                            .beforeState(beforeState)
+                            .afterState(afterState)
+                            .changeSummary(changeSummary)
+                            .ipAddress(ipAddress)
+                            .userAgent(userAgent)
+                            .build()
+            );
+        } catch (Exception ignored) {
+            // Keep problem action successful even if audit log fails
+        }
     }
 
     private ProblemDetailResponse mapToProblemDetailResponse(ProblemEntity entity) {
