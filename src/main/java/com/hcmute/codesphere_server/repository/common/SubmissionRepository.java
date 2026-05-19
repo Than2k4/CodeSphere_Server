@@ -80,14 +80,15 @@ public interface SubmissionRepository extends JpaRepository<SubmissionEntity, Lo
            "COUNT(DISTINCT s.problem_id) as totalSolved, " +
            "COUNT(DISTINCT CASE WHEN p.level = 'EASY' THEN s.problem_id END) as solvedEasy, " +
            "COUNT(DISTINCT CASE WHEN p.level = 'MEDIUM' THEN s.problem_id END) as solvedMedium, " +
-           "COUNT(DISTINCT CASE WHEN p.level = 'HARD' THEN s.problem_id END) as solvedHard " +
+           "COUNT(DISTINCT CASE WHEN p.level = 'HARD' THEN s.problem_id END) as solvedHard, " +
+           "u.avatar " +
            "FROM submissions s " +
            "INNER JOIN users u ON s.user_id = u.id " +
            "INNER JOIN problems p ON s.problem_id = p.id " +
            "WHERE s.is_deleted = false " +
            "AND s.is_accepted = true " +
            "AND s.created_at >= :fromDate " +
-           "GROUP BY s.user_id, u.username " +
+           "GROUP BY s.user_id, u.username, u.avatar " +
            "ORDER BY totalSolved DESC, s.user_id ASC", nativeQuery = true)
     java.util.List<Object[]> findUsersWithSolvedCountSince(@Param("fromDate") Instant fromDate);
 }

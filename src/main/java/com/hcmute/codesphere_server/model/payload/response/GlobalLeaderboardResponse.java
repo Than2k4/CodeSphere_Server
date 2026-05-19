@@ -24,5 +24,7 @@ public class GlobalLeaderboardResponse {
     private Integer solvedMedium; // Số bài MEDIUM đã giải
     
     private Integer solvedHard; // Số bài HARD đã giải
+    
+    private String avatar; // URL avatar của user
 }
 

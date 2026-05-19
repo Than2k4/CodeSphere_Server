@@ -57,6 +57,7 @@ public class LeaderboardService {
                     .statusRuntime(bestSubmission.getStatusRuntime())
                     .statusMemory(bestSubmission.getStatusMemory())
                     .isAccepted(bestSubmission.getIsAccepted())
+                    .avatar(best.getUser().getAvatar())
                     .build();
             
             leaderboard.add(response);
@@ -107,7 +108,8 @@ public class LeaderboardService {
             Object[] row = results.get(i);
             // row[0] = userId (Long), row[1] = username (String), 
             // row[2] = totalSolved (BigInteger), row[3] = solvedEasy (BigInteger),
-            // row[4] = solvedMedium (BigInteger), row[5] = solvedHard (BigInteger)
+            // row[4] = solvedMedium (BigInteger), row[5] = solvedHard (BigInteger),
+            // row[6] = avatar (String)
             
             Long userId = ((Number) row[0]).longValue();
             String username = (String) row[1];
@@ -115,6 +117,7 @@ public class LeaderboardService {
             Integer solvedEasy = ((Number) row[3]).intValue();
             Integer solvedMedium = ((Number) row[4]).intValue();
             Integer solvedHard = ((Number) row[5]).intValue();
+            String avatar = (String) row[6];
             
             GlobalLeaderboardResponse response = GlobalLeaderboardResponse.builder()
                     .rank(i + 1)
@@ -124,6 +127,7 @@ public class LeaderboardService {
                     .solvedEasy(solvedEasy)
                     .solvedMedium(solvedMedium)
                     .solvedHard(solvedHard)
+                    .avatar(avatar)
                     .build();
             
             leaderboard.add(response);

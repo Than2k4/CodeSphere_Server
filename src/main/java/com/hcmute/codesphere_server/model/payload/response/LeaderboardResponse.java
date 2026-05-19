@@ -34,5 +34,7 @@ public class LeaderboardResponse {
     private String statusMemory; // Memory của best submission
     
     private Boolean isAccepted; // Best submission có accepted không
+    
+    private String avatar; // URL avatar của user
 }
 

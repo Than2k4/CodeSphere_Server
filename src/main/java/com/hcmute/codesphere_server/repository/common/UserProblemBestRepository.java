@@ -54,13 +54,14 @@ public interface UserProblemBestRepository extends JpaRepository<UserProblemBest
            "COUNT(*) as totalSolved, " +
            "SUM(CASE WHEN p.level = 'EASY' THEN 1 ELSE 0 END) as solvedEasy, " +
            "SUM(CASE WHEN p.level = 'MEDIUM' THEN 1 ELSE 0 END) as solvedMedium, " +
-           "SUM(CASE WHEN p.level = 'HARD' THEN 1 ELSE 0 END) as solvedHard " +
+           "SUM(CASE WHEN p.level = 'HARD' THEN 1 ELSE 0 END) as solvedHard, " +
+           "u.avatar " +
            "FROM user_problem_best upb " +
            "INNER JOIN submissions s ON upb.best_submission_id = s.id " +
            "INNER JOIN users u ON upb.user_id = u.id " +
            "INNER JOIN problems p ON upb.problem_id = p.id " +
            "WHERE s.is_accepted = true " +
-           "GROUP BY upb.user_id, u.username " +
+           "GROUP BY upb.user_id, u.username, u.avatar " +
            "ORDER BY totalSolved DESC, upb.user_id ASC", nativeQuery = true)
     List<Object[]> findAllUsersWithSolvedCount();
 }
